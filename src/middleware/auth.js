@@ -6,6 +6,7 @@ const protect = async (req, res, next) => {
   try {
     let token;
 
+    console.log(token, "Here's the token.")
     // Check for token in headers
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
@@ -21,10 +22,10 @@ const protect = async (req, res, next) => {
     try {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      
+
       // Get user from token
       const user = await User.findById(decoded.id);
-      
+
       if (!user) {
         return res.status(401).json({
           success: false,
@@ -78,7 +79,7 @@ const optionalAuth = async (req, res, next) => {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const user = await User.findById(decoded.id);
-        
+
         if (user && user.is_active) {
           req.user = user;
         }

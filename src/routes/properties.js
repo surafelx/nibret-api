@@ -13,7 +13,7 @@ const propertySchema = Joi.object({
   beds: Joi.number().min(0).max(20).required(),
   baths: Joi.number().min(0).max(20).required(),
   sqft: Joi.number().min(1).required(),
-  address: Joi.string().min(10).max(500).required(),
+  address: Joi.string().min(5).max(500).required(),
   lat: Joi.number().min(-90).max(90),
   lng: Joi.number().min(-180).max(180),
   propertyType: Joi.string().valid('house', 'apartment', 'condo', 'villa', 'townhouse', 'studio', 'other').required(),
@@ -25,26 +25,144 @@ const propertySchema = Joi.object({
   lotSize: Joi.number().min(0),
   features: Joi.array().items(Joi.string()),
   contact_info: Joi.object({
-    phone: Joi.string(),
-    email: Joi.string().email(),
-    agent_name: Joi.string()
-  })
+    phone: Joi.string().allow('').optional(),
+    email: Joi.string().email().allow('').optional(),
+    agent_name: Joi.string().allow('').optional()
+  }).optional()
 });
 
 // @route   POST /properties
-// @desc    Create new property
-// @access  Private
-router.post('/', protect, async (req, res, next) => {
+// @desc    Create new property (with embedded credentials support)
+// @access  Private/Public with credentials
+router.post('/', async (req, res, next) => {
   try {
-    // Handle both JSON and form data with credentials
     let propertyData;
+    let user = null;
 
     if (req.body.username && req.body.password) {
       // This is a request with embedded credentials (like from frontend)
       const { username, password, ...data } = req.body;
       propertyData = data;
-    } else {
+
+      // Authenticate user with embedded credentials
+      const User = require('../models/User');
+      user = await User.findByEmailOrPhone(username);
+
+      if (!user || !(await user.comparePassword(password))) {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid credentials'
+        });
+      }
+    } else if (req.user) {
+      // This is a request with JWT token
       propertyData = req.body;
+      user = req.user;
+    } else {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
+    // Convert string numbers to actual numbers and handle empty values
+    if (propertyData.price !== undefined) {
+      if (typeof propertyData.price === 'string') {
+        propertyData.price = parseFloat(propertyData.price);
+      }
+      if (isNaN(propertyData.price) || propertyData.price < 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Price must be a valid number greater than or equal to 0'
+        });
+      }
+    }
+
+    if (propertyData.beds !== undefined) {
+      if (typeof propertyData.beds === 'string') {
+        propertyData.beds = parseInt(propertyData.beds);
+      }
+      if (isNaN(propertyData.beds) || propertyData.beds < 0 || propertyData.beds > 20) {
+        return res.status(400).json({
+          success: false,
+          error: 'Bedrooms must be a valid number between 0 and 20'
+        });
+      }
+    }
+
+    if (propertyData.baths !== undefined) {
+      if (typeof propertyData.baths === 'string') {
+        propertyData.baths = parseInt(propertyData.baths);
+      }
+      if (isNaN(propertyData.baths) || propertyData.baths < 0 || propertyData.baths > 20) {
+        return res.status(400).json({
+          success: false,
+          error: 'Bathrooms must be a valid number between 0 and 20'
+        });
+      }
+    }
+
+    if (propertyData.sqft !== undefined) {
+      if (typeof propertyData.sqft === 'string') {
+        propertyData.sqft = parseFloat(propertyData.sqft);
+      }
+      if (isNaN(propertyData.sqft) || propertyData.sqft < 1) {
+        return res.status(400).json({
+          success: false,
+          error: 'Square footage must be a valid number greater than or equal to 1'
+        });
+      }
+    }
+
+    if (propertyData.lat !== undefined && propertyData.lat !== '') {
+      if (typeof propertyData.lat === 'string') {
+        propertyData.lat = parseFloat(propertyData.lat);
+      }
+      if (isNaN(propertyData.lat)) {
+        propertyData.lat = undefined; // Will use default
+      }
+    }
+
+    if (propertyData.lng !== undefined && propertyData.lng !== '') {
+      if (typeof propertyData.lng === 'string') {
+        propertyData.lng = parseFloat(propertyData.lng);
+      }
+      if (isNaN(propertyData.lng)) {
+        propertyData.lng = undefined; // Will use default
+      }
+    }
+
+    if (propertyData.yearBuilt !== undefined && propertyData.yearBuilt !== '') {
+      if (typeof propertyData.yearBuilt === 'string') {
+        propertyData.yearBuilt = parseInt(propertyData.yearBuilt);
+      }
+      if (isNaN(propertyData.yearBuilt)) {
+        propertyData.yearBuilt = undefined; // Optional field
+      }
+    }
+
+    if (propertyData.lotSize !== undefined && propertyData.lotSize !== '') {
+      if (typeof propertyData.lotSize === 'string') {
+        propertyData.lotSize = parseFloat(propertyData.lotSize);
+      }
+      if (isNaN(propertyData.lotSize)) {
+        propertyData.lotSize = undefined; // Optional field
+      }
+    }
+
+    // Clean up contact_info - remove empty strings and convert to undefined
+    if (propertyData.contact_info) {
+      const contactInfo = propertyData.contact_info;
+
+      // Convert empty strings to undefined for optional fields
+      if (contactInfo.phone === '') contactInfo.phone = undefined;
+      if (contactInfo.email === '') contactInfo.email = undefined;
+      if (contactInfo.agent_name === '') contactInfo.agent_name = undefined;
+
+      // If all contact info fields are empty, remove the entire object
+      if (!contactInfo.phone && !contactInfo.email && !contactInfo.agent_name) {
+        propertyData.contact_info = undefined;
+      }
     }
 
     // Validate input
@@ -63,10 +181,15 @@ router.post('/', protect, async (req, res, next) => {
       value.lng = 38.7469;
     }
 
+    // Set default values
+    if (!value.status) value.status = 'for_sale';
+    if (!value.publish_status) value.publish_status = 'draft';
+    if (!value.listing_type) value.listing_type = 'sale';
+
     // Create property with current user as owner
     const property = await Property.create({
       ...value,
-      owner: req.user._id
+      owner: user._id
     });
 
     // Populate owner info
@@ -148,15 +271,219 @@ router.post('/list', async (req, res, next) => {
     // Handle request with embedded credentials
     const { username, password, ...filters } = req.body;
 
-    // For now, just return properties (authentication handled separately)
-    let query = Property.searchProperties(filters);
+    // For public listing, only show published properties
+    const publicFilters = {
+      ...filters,
+      publish_status: 'published'
+    };
 
-    const properties = await query
+    // Build query manually to include publish_status filter
+    const query = {};
+
+    // Text search
+    if (publicFilters.search) {
+      query.$text = { $search: publicFilters.search };
+    }
+
+    // Property type filter
+    if (publicFilters.type && publicFilters.type.length > 0) {
+      query.propertyType = { $in: publicFilters.type };
+    }
+
+    // Price range
+    if (publicFilters.min_price || publicFilters.max_price) {
+      query.price = {};
+      if (publicFilters.min_price) query.price.$gte = publicFilters.min_price;
+      if (publicFilters.max_price) query.price.$lte = publicFilters.max_price;
+    }
+
+    // Bedroom filter
+    if (publicFilters.bedroom) {
+      query.beds = { $gte: publicFilters.bedroom };
+    }
+
+    // Bathroom filter
+    if (publicFilters.bathroom) {
+      query.baths = { $gte: publicFilters.bathroom };
+    }
+
+    // Status filter - handle both status and listing_type
+    if (publicFilters.status) {
+      if (publicFilters.status === 'for_rent') {
+        // For rent page: show properties that are for rent OR have listing_type 'rent' or 'both'
+        query.$or = [
+          { status: 'for_rent' },
+          { listing_type: 'rent' },
+          { listing_type: 'both' }
+        ];
+      } else if (publicFilters.status === 'for_sale') {
+        // For sale page: show properties that are for sale OR have listing_type 'sale' or 'both'
+        query.$or = [
+          { status: 'for_sale' },
+          { listing_type: 'sale' },
+          { listing_type: 'both' }
+        ];
+      } else {
+        // Other statuses: use exact match
+        query.status = publicFilters.status;
+      }
+    }
+
+    // Only published properties for public listing
+    query.publish_status = 'published';
+
+    const properties = await Property.find(query)
       .sort('-created_at')
       .limit(50)
       .populate('owner', 'first_name last_name email phone');
 
-    res.json(properties);
+    // Transform properties to ensure id field is present
+    const transformedProperties = properties.map(property => {
+      const propertyObj = property.toJSON();
+      return propertyObj;
+    });
+
+    res.json(transformedProperties);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /properties/my-properties
+// @desc    Get current user's properties
+// @access  Private
+router.get('/my-properties', protect, async (req, res, next) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      publish_status,
+      status
+    } = req.query;
+
+    // Build query for user's properties
+    const query = { owner: req.user._id };
+
+    if (publish_status) query.publish_status = publish_status;
+    if (status) query.status = status;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const properties = await Property.find(query)
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .populate('owner', 'first_name last_name email phone');
+
+    const total = await Property.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: properties,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /properties/nearby
+// @desc    Get nearby properties
+// @access  Public
+router.get('/nearby', optionalAuth, async (req, res, next) => {
+  try {
+    const { lat, lng, radius = 5 } = req.query;
+
+    if (!lat || !lng) {
+      return res.status(400).json({
+        success: false,
+        error: 'Latitude and longitude are required'
+      });
+    }
+
+    const properties = await Property.findNearby(
+      parseFloat(lat),
+      parseFloat(lng),
+      parseFloat(radius)
+    );
+
+    res.json({
+      success: true,
+      data: properties
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /properties/stats/breakdown
+// @desc    Get property statistics
+// @access  Private/Admin
+router.get('/stats/breakdown', protect, authorize('ADMIN'), async (req, res, next) => {
+  try {
+    const stats = await Property.aggregate([
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          avgPrice: { $avg: '$price' }
+        }
+      }
+    ]);
+
+    const typeStats = await Property.aggregate([
+      {
+        $group: {
+          _id: '$propertyType',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        statusBreakdown: stats,
+        typeBreakdown: typeStats
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /properties/stats/monthly
+// @desc    Get monthly property data
+// @access  Private/Admin
+router.get('/stats/monthly', protect, authorize('ADMIN'), async (req, res, next) => {
+  try {
+    const monthlyStats = await Property.aggregate([
+      {
+        $group: {
+          _id: {
+            year: { $year: '$created_at' },
+            month: { $month: '$created_at' }
+          },
+          count: { $sum: 1 },
+          avgPrice: { $avg: '$price' }
+        }
+      },
+      {
+        $sort: { '_id.year': -1, '_id.month': -1 }
+      },
+      {
+        $limit: 12
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: monthlyStats
+    });
   } catch (error) {
     next(error);
   }
@@ -270,35 +597,6 @@ router.delete('/:id', protect, async (req, res, next) => {
   }
 });
 
-// @route   GET /properties/nearby
-// @desc    Get nearby properties
-// @access  Public
-router.get('/nearby', optionalAuth, async (req, res, next) => {
-  try {
-    const { lat, lng, radius = 5 } = req.query;
-
-    if (!lat || !lng) {
-      return res.status(400).json({
-        success: false,
-        error: 'Latitude and longitude are required'
-      });
-    }
-
-    const properties = await Property.findNearby(
-      parseFloat(lat),
-      parseFloat(lng),
-      parseFloat(radius)
-    );
-
-    res.json({
-      success: true,
-      data: properties
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
 // @route   PATCH /properties/:id/status
 // @desc    Toggle property status
 // @access  Private (Owner or Admin)
@@ -342,75 +640,6 @@ router.patch('/:id/status', protect, async (req, res, next) => {
     res.json({
       success: true,
       data: property
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// @route   GET /properties/stats/breakdown
-// @desc    Get property statistics
-// @access  Private/Admin
-router.get('/stats/breakdown', protect, authorize('ADMIN'), async (req, res, next) => {
-  try {
-    const stats = await Property.aggregate([
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 },
-          avgPrice: { $avg: '$price' }
-        }
-      }
-    ]);
-
-    const typeStats = await Property.aggregate([
-      {
-        $group: {
-          _id: '$propertyType',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    res.json({
-      success: true,
-      data: {
-        statusBreakdown: stats,
-        typeBreakdown: typeStats
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// @route   GET /properties/stats/monthly
-// @desc    Get monthly property data
-// @access  Private/Admin
-router.get('/stats/monthly', protect, authorize('ADMIN'), async (req, res, next) => {
-  try {
-    const monthlyStats = await Property.aggregate([
-      {
-        $group: {
-          _id: {
-            year: { $year: '$created_at' },
-            month: { $month: '$created_at' }
-          },
-          count: { $sum: 1 },
-          avgPrice: { $avg: '$price' }
-        }
-      },
-      {
-        $sort: { '_id.year': -1, '_id.month': -1 }
-      },
-      {
-        $limit: 12
-      }
-    ]);
-
-    res.json({
-      success: true,
-      data: monthlyStats
     });
   } catch (error) {
     next(error);
@@ -516,48 +745,6 @@ router.patch('/:id/draft', protect, async (req, res, next) => {
       success: true,
       message: 'Property set as draft successfully',
       data: property
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// @route   GET /properties/my-properties
-// @desc    Get current user's properties
-// @access  Private
-router.get('/my-properties', protect, async (req, res, next) => {
-  try {
-    const {
-      page = 1,
-      limit = 20,
-      publish_status,
-      status
-    } = req.query;
-
-    // Build query for user's properties
-    const query = { owner: req.user._id };
-
-    if (publish_status) query.publish_status = publish_status;
-    if (status) query.status = status;
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const properties = await Property.find(query)
-      .sort({ created_at: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .populate('owner', 'first_name last_name email phone');
-
-    const total = await Property.countDocuments(query);
-
-    res.json({
-      success: true,
-      data: properties,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
-      }
     });
   } catch (error) {
     next(error);

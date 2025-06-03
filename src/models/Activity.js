@@ -4,13 +4,13 @@ const activitySchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false // Allow anonymous activities
   },
   type: {
     type: String,
     enum: [
       'login',
-      'logout', 
+      'logout',
       'property_view',
       'property_click',
       'search',
@@ -25,10 +25,17 @@ const activitySchema = new mongoose.Schema({
       'property_upload',
       'property_edit',
       'property_delete',
+      'image_upload',
       'admin_action',
       'page_view',
       'button_click',
-      'form_submission'
+      'form_submission',
+      'error',
+      'lead_created',
+      'lead_updated',
+      'lead_status_updated',
+      'follow_up_scheduled',
+      'lead_deleted'
     ],
     required: true
   },
@@ -82,7 +89,7 @@ activitySchema.index({ timestamp: -1 });
 activitySchema.statics.getUserActivity = function(userId, days = 30) {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
-  
+
   return this.find({
     user: userId,
     timestamp: { $gte: startDate }
@@ -92,7 +99,7 @@ activitySchema.statics.getUserActivity = function(userId, days = 30) {
 activitySchema.statics.getPopularProperties = function(days = 30) {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
-  
+
   return this.aggregate([
     {
       $match: {
@@ -125,7 +132,7 @@ activitySchema.statics.getPopularProperties = function(days = 30) {
 activitySchema.statics.getSearchAnalytics = function(days = 30) {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
-  
+
   return this.aggregate([
     {
       $match: {
@@ -158,7 +165,7 @@ activitySchema.statics.getSearchAnalytics = function(days = 30) {
 activitySchema.statics.getDailyStats = function(days = 30) {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
-  
+
   return this.aggregate([
     {
       $match: {
@@ -192,7 +199,7 @@ activitySchema.statics.getDailyStats = function(days = 30) {
 activitySchema.statics.getUserEngagement = function(days = 30) {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
-  
+
   return this.aggregate([
     {
       $match: {

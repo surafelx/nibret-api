@@ -126,6 +126,9 @@ const propertySchema = new mongoose.Schema({
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
   toJSON: {
     transform: function(doc, ret) {
+      // Convert _id to id for frontend compatibility
+      ret.id = ret._id;
+      delete ret._id;
       delete ret.__v;
       return ret;
     }

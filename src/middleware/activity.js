@@ -5,17 +5,17 @@ const trackActivity = (activityType, actionDescription) => {
   return async (req, res, next) => {
     // Store original res.json to intercept response
     const originalJson = res.json;
-    
+
     res.json = function(data) {
       // Track activity after successful response
       if (res.statusCode >= 200 && res.statusCode < 300) {
         trackUserActivity(req, activityType, actionDescription, data);
       }
-      
+
       // Call original json method
       return originalJson.call(this, data);
     };
-    
+
     next();
   };
 };
@@ -25,7 +25,7 @@ const trackUserActivity = async (req, type, action, responseData = null) => {
   try {
     const userId = req.user ? req.user._id : null;
     const sessionId = req.sessionID || req.headers['x-session-id'] || 'anonymous';
-    
+
     // Get metadata from request
     const metadata = {
       ip_address: req.ip || req.connection.remoteAddress,
@@ -46,7 +46,7 @@ const trackUserActivity = async (req, type, action, responseData = null) => {
           metadata.property_id = req.params.id;
         }
         break;
-        
+
       case 'search':
         if (req.body.search || req.query.search) {
           metadata.search_query = req.body.search || req.query.search;
@@ -55,18 +55,18 @@ const trackUserActivity = async (req, type, action, responseData = null) => {
           metadata.filter_criteria = req.body.filters || req.query.filters;
         }
         break;
-        
+
       case 'login':
         metadata.login_method = req.body.username ? 'username' : 'email';
         break;
-        
+
       case 'property_upload':
       case 'property_edit':
         if (responseData && responseData.data && responseData.data._id) {
           metadata.property_id = responseData.data._id;
         }
         break;
-        
+
       case 'contact_form':
       case 'property_inquiry':
         if (req.body.contact_info) {
@@ -81,7 +81,6 @@ const trackUserActivity = async (req, type, action, responseData = null) => {
 
     // Create activity record
     const activityData = {
-      user: userId,
       type,
       action,
       description: generateDescription(type, action, req),
@@ -89,6 +88,11 @@ const trackUserActivity = async (req, type, action, responseData = null) => {
       session_id: sessionId,
       timestamp: new Date()
     };
+
+    // Only add user if authenticated
+    if (userId) {
+      activityData.user = userId;
+    }
 
     // Log activity asynchronously (don't block response)
     Activity.logActivity(activityData).catch(error => {
@@ -103,7 +107,7 @@ const trackUserActivity = async (req, type, action, responseData = null) => {
 // Generate human-readable description
 const generateDescription = (type, action, req) => {
   const userInfo = req.user ? `${req.user.first_name} ${req.user.last_name}` : 'Anonymous user';
-  
+
   switch (type) {
     case 'login':
       return `${userInfo} logged in`;
@@ -164,9 +168,8 @@ const trackPageView = (req, res, next) => {
 const trackError = (error, req, res, next) => {
   const userId = req.user ? req.user._id : null;
   const sessionId = req.sessionID || req.headers['x-session-id'] || 'anonymous';
-  
+
   const activityData = {
-    user: userId,
     type: 'error',
     action: 'Error occurred',
     description: `Error: ${error.message}`,
@@ -182,6 +185,11 @@ const trackError = (error, req, res, next) => {
     },
     session_id: sessionId
   };
+
+  // Only add user if authenticated
+  if (userId) {
+    activityData.user = userId;
+  }
 
   // Log error activity
   Activity.logActivity(activityData).catch(logError => {
