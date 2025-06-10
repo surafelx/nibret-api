@@ -10,6 +10,7 @@ const propertySchema = Joi.object({
   title: Joi.string().min(5).max(200).required(),
   description: Joi.string().max(2000),
   price: Joi.number().min(0).required(),
+  currency: Joi.string().valid('ETB', 'USD').default('ETB'),
   beds: Joi.number().min(0).max(20).required(),
   baths: Joi.number().min(0).max(20).required(),
   sqft: Joi.number().min(1).required(),
@@ -185,6 +186,7 @@ router.post('/', async (req, res, next) => {
     if (!value.status) value.status = 'for_sale';
     if (!value.publish_status) value.publish_status = 'draft';
     if (!value.listing_type) value.listing_type = 'sale';
+    if (!value.currency) value.currency = 'ETB';
 
     // Create property with current user as owner
     const property = await Property.create({
@@ -332,8 +334,9 @@ router.post('/list', async (req, res, next) => {
     // Only published properties for public listing
     query.publish_status = 'published';
 
+    // Get properties with featured properties first, then by creation date
     const properties = await Property.find(query)
-      .sort('-created_at')
+      .sort({ is_featured: -1, created_at: -1 }) // Featured first, then newest
       .limit(50)
       .populate('owner', 'first_name last_name email phone');
 
@@ -711,6 +714,138 @@ router.patch('/:id/archive', protect, async (req, res, next) => {
       message: 'Property archived successfully',
       data: property
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   PATCH /properties/:id/feature
+// @desc    Toggle featured status of a property (Admin only)
+// @access  Private (Admin only)
+router.patch('/:id/feature', protect, async (req, res, next) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only admins can feature/unfeature properties'
+      });
+    }
+
+    const property = await Property.findById(req.params.id);
+
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        error: 'Property not found'
+      });
+    }
+
+    // Toggle featured status
+    property.is_featured = !property.is_featured;
+    await property.save();
+
+    await property.populate('owner', 'first_name last_name email phone');
+
+    res.json({
+      success: true,
+      message: `Property ${property.is_featured ? 'featured' : 'unfeatured'} successfully`,
+      data: property,
+      is_featured: property.is_featured
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   POST /properties/bulk-feature
+// @desc    Bulk toggle featured status for multiple properties (Admin only)
+// @access  Private (Admin only)
+router.post('/bulk-feature', protect, async (req, res, next) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only admins can bulk feature properties'
+      });
+    }
+
+    const { property_ids, is_featured } = req.body;
+
+    if (!Array.isArray(property_ids) || property_ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'property_ids must be a non-empty array'
+      });
+    }
+
+    if (typeof is_featured !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        error: 'is_featured must be a boolean value'
+      });
+    }
+
+    // Update multiple properties
+    const result = await Property.updateMany(
+      { _id: { $in: property_ids } },
+      { is_featured: is_featured }
+    );
+
+    // Get updated properties
+    const updatedProperties = await Property.find({ _id: { $in: property_ids } })
+      .populate('owner', 'first_name last_name email phone');
+
+    res.json({
+      success: true,
+      message: `${result.modifiedCount} properties ${is_featured ? 'featured' : 'unfeatured'} successfully`,
+      data: updatedProperties,
+      modified_count: result.modifiedCount
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /properties/featured
+// @desc    Get all featured properties
+// @access  Public
+router.get('/featured', async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Get featured properties, sorted by creation date (newest first)
+    const properties = await Property.find({
+      is_featured: true,
+      publish_status: 'published'
+    })
+      .populate('owner', 'first_name last_name email phone')
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    // Get total count for pagination
+    const total = await Property.countDocuments({
+      is_featured: true,
+      publish_status: 'published'
+    });
+
+    res.json({
+      success: true,
+      data: properties,
+      pagination: {
+        current_page: page,
+        total_pages: Math.ceil(total / limit),
+        total_properties: total,
+        per_page: limit
+      }
+    });
+
   } catch (error) {
     next(error);
   }

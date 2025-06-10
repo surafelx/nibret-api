@@ -17,6 +17,12 @@ const propertySchema = new mongoose.Schema({
     required: [true, 'Price is required'],
     min: [0, 'Price cannot be negative']
   },
+  currency: {
+    type: String,
+    enum: ['ETB', 'USD'],
+    default: 'ETB',
+    uppercase: true
+  },
   beds: {
     type: Number,
     required: [true, 'Number of bedrooms is required'],
