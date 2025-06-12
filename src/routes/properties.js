@@ -492,20 +492,66 @@ router.get('/stats/monthly', protect, authorize('ADMIN'), async (req, res, next)
   }
 });
 
+// @route   GET /properties/featured
+// @desc    Get all featured properties
+// @access  Public
+router.get('/featured', async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Get featured properties, sorted by creation date (newest first)
+    const properties = await Property.find({
+      is_featured: true,
+      publish_status: 'published'
+    })
+      .populate('owner', 'first_name last_name email phone')
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    // Get total count for pagination
+    const total = await Property.countDocuments({
+      is_featured: true,
+      publish_status: 'published'
+    });
+
+    res.json({
+      success: true,
+      data: properties,
+      pagination: {
+        current_page: page,
+        total_pages: Math.ceil(total / limit),
+        total_properties: total,
+        per_page: limit
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @route   GET /properties/:id
 // @desc    Get single property
 // @access  Public
 router.get('/:id', optionalAuth, async (req, res, next) => {
   try {
+    console.log(`🔍 Fetching property with ID: ${req.params.id}`);
+
     const property = await Property.findById(req.params.id)
       .populate('owner', 'first_name last_name email phone');
 
     if (!property) {
+      console.log(`❌ Property not found: ${req.params.id}`);
       return res.status(404).json({
         success: false,
         error: 'Property not found'
       });
     }
+
+    console.log(`✅ Property found: ${property.title}`);
 
     // Increment views if not owner
     if (!req.user || property.owner._id.toString() !== req.user._id.toString()) {
@@ -517,6 +563,7 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
       data: property
     });
   } catch (error) {
+    console.error(`❌ Error fetching property ${req.params.id}:`, error);
     next(error);
   }
 });
@@ -810,46 +857,7 @@ router.post('/bulk-feature', protect, async (req, res, next) => {
   }
 });
 
-// @route   GET /properties/featured
-// @desc    Get all featured properties
-// @access  Public
-router.get('/featured', async (req, res, next) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
 
-    // Get featured properties, sorted by creation date (newest first)
-    const properties = await Property.find({
-      is_featured: true,
-      publish_status: 'published'
-    })
-      .populate('owner', 'first_name last_name email phone')
-      .sort({ created_at: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    // Get total count for pagination
-    const total = await Property.countDocuments({
-      is_featured: true,
-      publish_status: 'published'
-    });
-
-    res.json({
-      success: true,
-      data: properties,
-      pagination: {
-        current_page: page,
-        total_pages: Math.ceil(total / limit),
-        total_properties: total,
-        per_page: limit
-      }
-    });
-
-  } catch (error) {
-    next(error);
-  }
-});
 
 // @route   PATCH /properties/:id/draft
 // @desc    Set property as draft
