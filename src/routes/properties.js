@@ -13,11 +13,12 @@ const propertySchema = Joi.object({
   currency: Joi.string().valid('ETB', 'USD').default('ETB'),
   beds: Joi.number().min(0).max(20).required(),
   baths: Joi.number().min(0).max(20).required(),
-  sqft: Joi.number().min(1).required(),
+  sqm: Joi.number().min(1).optional(),
+  sqft: Joi.number().min(1).optional(), // For backward compatibility
   address: Joi.string().min(5).max(500).required(),
   lat: Joi.number().min(-90).max(90),
   lng: Joi.number().min(-180).max(180),
-  propertyType: Joi.string().valid('house', 'apartment', 'condo', 'villa', 'townhouse', 'studio', 'other').required(),
+  propertyType: Joi.string().valid('house', 'apartment', 'condo', 'villa', 'townhouse', 'studio', 'office', 'other').required(),
   status: Joi.string().valid('for_sale', 'for_rent', 'sold', 'rented', 'off_market'),
   publish_status: Joi.string().valid('draft', 'published', 'archived', 'pending_review'),
   listing_type: Joi.string().valid('sale', 'rent', 'both'),
@@ -29,7 +30,18 @@ const propertySchema = Joi.object({
     phone: Joi.string().allow('').optional(),
     email: Joi.string().email().allow('').optional(),
     agent_name: Joi.string().allow('').optional()
-  }).optional()
+  }).optional(),
+  is_negotiable: Joi.boolean().default(false),
+  discount_percentage: Joi.number().min(0).max(90).default(0),
+  original_price: Joi.number().min(0).optional(),
+  admin_tags: Joi.array().items(Joi.string().valid(
+    'hot_deal', 'price_reduced', 'new_listing', 'open_house', 'virtual_tour',
+    'luxury', 'investment_opportunity', 'quick_sale', 'motivated_seller',
+    'under_contract', 'coming_soon', 'exclusive', 'waterfront', 'corner_lot',
+    'renovated', 'move_in_ready'
+  )).optional(),
+  admin_notes: Joi.string().max(1000).optional(),
+  priority_level: Joi.string().valid('low', 'normal', 'high', 'urgent').default('normal')
 });
 
 // @route   POST /properties
@@ -103,16 +115,36 @@ router.post('/', async (req, res, next) => {
       }
     }
 
-    if (propertyData.sqft !== undefined) {
+    // Handle both sqm and sqft for backward compatibility
+    if (propertyData.sqm !== undefined) {
+      if (typeof propertyData.sqm === 'string') {
+        propertyData.sqm = parseFloat(propertyData.sqm);
+      }
+      if (isNaN(propertyData.sqm) || propertyData.sqm < 1) {
+        return res.status(400).json({
+          success: false,
+          error: 'Square meters must be a valid number greater than or equal to 1'
+        });
+      }
+    } else if (propertyData.sqft !== undefined) {
+      // Convert sqft to sqm for storage (1 sqft = 0.092903 sqm)
       if (typeof propertyData.sqft === 'string') {
         propertyData.sqft = parseFloat(propertyData.sqft);
       }
       if (isNaN(propertyData.sqft) || propertyData.sqft < 1) {
         return res.status(400).json({
           success: false,
-          error: 'Square footage must be a valid number greater than or equal to 1'
+          error: 'Square feet must be a valid number greater than or equal to 1'
         });
       }
+      // Convert sqft to sqm and store as sqm
+      propertyData.sqm = Math.round(propertyData.sqft * 0.092903);
+      delete propertyData.sqft; // Remove sqft from data to be stored
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Either square meters (sqm) or square feet (sqft) must be provided'
+      });
     }
 
     if (propertyData.lat !== undefined && propertyData.lat !== '') {
@@ -570,9 +602,38 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
 
 // @route   PUT /properties/:id
 // @desc    Update property
-// @access  Private (Owner or Admin)
-router.put('/:id', protect, async (req, res, next) => {
+// @access  Private (Owner or Admin) or with embedded credentials
+router.put('/:id', async (req, res, next) => {
   try {
+    let user = null;
+    let propertyData;
+
+    if (req.body.username && req.body.password) {
+      // This is a request with embedded credentials (like from frontend)
+      const { username, password, ...data } = req.body;
+      propertyData = data;
+
+      // Authenticate user with embedded credentials
+      const User = require('../models/User');
+      user = await User.findByEmailOrPhone(username);
+
+      if (!user || !(await user.comparePassword(password))) {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid credentials'
+        });
+      }
+    } else if (req.user) {
+      // This is a request with JWT token
+      propertyData = req.body;
+      user = req.user;
+    } else {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
     let property = await Property.findById(req.params.id);
 
     if (!property) {
@@ -583,7 +644,7 @@ router.put('/:id', protect, async (req, res, next) => {
     }
 
     // Check ownership or admin role
-    if (property.owner.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+    if (property.owner.toString() !== user._id.toString() && user.role !== 'ADMIN') {
       return res.status(403).json({
         success: false,
         error: 'Not authorized to update this property'
@@ -591,7 +652,7 @@ router.put('/:id', protect, async (req, res, next) => {
     }
 
     // Validate input
-    const { error, value } = propertySchema.validate(req.body);
+    const { error, value } = propertySchema.validate(propertyData);
     if (error) {
       return res.status(400).json({
         success: false,

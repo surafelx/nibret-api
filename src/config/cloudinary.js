@@ -19,7 +19,7 @@ const isCloudinaryConfigured = () => {
          apiSecret !== 'REPLACE_WITH_YOUR_REAL_API_SECRET';
 };
 
-// Configure Cloudinary only if properly configured
+// Configure Cloudinary - ALWAYS required for production
 if (isCloudinaryConfigured()) {
   cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -28,7 +28,9 @@ if (isCloudinaryConfigured()) {
   });
   console.log('✅ Cloudinary configured successfully');
 } else {
-  console.log('⚠️  Cloudinary not configured, using local storage fallback');
+  console.error('❌ Cloudinary configuration missing! Image uploads will fail.');
+  console.error('Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables.');
+  throw new Error('Cloudinary configuration is required for image uploads');
 }
 
 // Create uploads directory if it doesn't exist
@@ -37,46 +39,28 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure storage based on Cloudinary availability
-let storage;
-
-if (isCloudinaryConfigured()) {
-  // Use Cloudinary storage
-  storage = new CloudinaryStorage({
-    cloudinary: cloudinary,
-    params: {
-      folder: 'nibret-properties',
-      allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
-      transformation: [
-        {
-          width: 1200,
-          height: 800,
-          crop: 'limit',
-          quality: 'auto:good',
-          fetch_format: 'auto'
-        }
-      ],
-      public_id: (req, file) => {
-        const timestamp = Date.now();
-        const random = Math.random().toString(36).substring(2, 15);
-        return `property-${timestamp}-${random}`;
-      },
-    },
-  });
-} else {
-  // Use local storage fallback
-  storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-      cb(null, uploadsDir);
-    },
-    filename: (req, file, cb) => {
+// Always use Cloudinary storage - no fallback to local storage
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'nibret-properties',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+    transformation: [
+      {
+        width: 1200,
+        height: 800,
+        crop: 'limit',
+        quality: 'auto:good',
+        fetch_format: 'auto'
+      }
+    ],
+    public_id: (req, file) => {
       const timestamp = Date.now();
       const random = Math.random().toString(36).substring(2, 15);
-      const ext = path.extname(file.originalname);
-      cb(null, `property-${timestamp}-${random}${ext}`);
-    }
-  });
-}
+      return `property-${timestamp}-${random}`;
+    },
+  },
+});
 
 // Configure multer with Cloudinary storage
 const upload = multer({

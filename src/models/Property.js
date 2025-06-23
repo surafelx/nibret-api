@@ -35,10 +35,10 @@ const propertySchema = new mongoose.Schema({
     min: [0, 'Bathrooms cannot be negative'],
     max: [20, 'Maximum 20 bathrooms allowed']
   },
-  sqft: {
+  sqm: {
     type: Number,
-    required: [true, 'Square footage is required'],
-    min: [1, 'Square footage must be at least 1']
+    required: [true, 'Square meters is required'],
+    min: [1, 'Square meters must be at least 1']
   },
   address: {
     type: String,
@@ -61,7 +61,7 @@ const propertySchema = new mongoose.Schema({
   propertyType: {
     type: String,
     required: [true, 'Property type is required'],
-    enum: ['house', 'apartment', 'condo', 'villa', 'townhouse', 'studio', 'other'],
+    enum: ['house', 'apartment', 'condo', 'villa', 'townhouse', 'studio', 'office', 'other'],
     lowercase: true
   },
   status: {
@@ -107,6 +107,20 @@ const propertySchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  is_negotiable: {
+    type: Boolean,
+    default: false
+  },
+  discount_percentage: {
+    type: Number,
+    min: 0,
+    max: 90,
+    default: 0
+  },
+  original_price: {
+    type: Number,
+    min: 0
+  },
   views: {
     type: Number,
     default: 0
@@ -127,6 +141,36 @@ const propertySchema = new mongoose.Schema({
     phone: String,
     email: String,
     agent_name: String
+  },
+  admin_tags: [{
+    type: String,
+    enum: [
+      'hot_deal',
+      'price_reduced',
+      'new_listing',
+      'open_house',
+      'virtual_tour',
+      'luxury',
+      'investment_opportunity',
+      'quick_sale',
+      'motivated_seller',
+      'under_contract',
+      'coming_soon',
+      'exclusive',
+      'waterfront',
+      'corner_lot',
+      'renovated',
+      'move_in_ready'
+    ]
+  }],
+  admin_notes: {
+    type: String,
+    maxlength: [1000, 'Admin notes cannot exceed 1000 characters']
+  },
+  priority_level: {
+    type: String,
+    enum: ['low', 'normal', 'high', 'urgent'],
+    default: 'normal'
   }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
@@ -136,6 +180,12 @@ const propertySchema = new mongoose.Schema({
       ret.id = ret._id;
       delete ret._id;
       delete ret.__v;
+
+      // Add sqft for backward compatibility (1 sqm = 10.764 sqft)
+      if (ret.sqm && !ret.sqft) {
+        ret.sqft = Math.round(ret.sqm * 10.764);
+      }
+
       return ret;
     }
   }

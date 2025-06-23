@@ -17,41 +17,16 @@ router.post('/image', protect, upload.single('image'), trackActivity('image_uplo
       });
     }
 
-    let result;
-
-    // Check if using Cloudinary or local storage
-    if (req.file.path && req.file.path.includes('cloudinary')) {
-      // Cloudinary upload
-      result = {
-        public_id: req.file.filename,
-        secure_url: req.file.path,
-        width: req.file.width || null,
-        height: req.file.height || null,
-        format: req.file.format || null,
-        bytes: req.file.size || null,
-        urls: getImageUrls(req.file.filename)
-      };
-    } else {
-      // Local storage fallback
-      const baseUrl = `${req.protocol}://${req.get('host')}`;
-      const imageUrl = `${baseUrl}/uploads/${req.file.filename}`;
-
-      result = {
-        public_id: req.file.filename,
-        secure_url: imageUrl,
-        width: null,
-        height: null,
-        format: path.extname(req.file.filename).substring(1),
-        bytes: req.file.size || null,
-        urls: {
-          original: imageUrl,
-          thumbnail: imageUrl,
-          medium: imageUrl,
-          large: imageUrl,
-          hero: imageUrl
-        }
-      };
-    }
+    // All uploads now go to Cloudinary
+    const result = {
+      public_id: req.file.filename,
+      secure_url: req.file.path,
+      width: req.file.width || null,
+      height: req.file.height || null,
+      format: req.file.format || null,
+      bytes: req.file.size || null,
+      urls: getImageUrls(req.file.filename)
+    };
 
     res.status(200).json({
       success: true,
