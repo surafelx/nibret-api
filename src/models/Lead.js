@@ -66,7 +66,7 @@ const leadSchema = new mongoose.Schema({
   },
   source: {
     type: String,
-    enum: ['website', 'phone_call', 'email', 'referral', 'social_media', 'advertisement', 'walk_in', 'other'],
+    enum: ['website', 'phone_call', 'email', 'referral', 'social_media', 'advertisement', 'walk_in', 'other', 'crm_test'],
     default: 'website'
   },
   priority: {

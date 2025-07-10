@@ -955,4 +955,134 @@ router.patch('/:id/draft', protect, async (req, res, next) => {
   }
 });
 
+// @route   POST /properties/:id/view
+// @desc    Track property view
+// @access  Public
+router.post('/:id/view', async (req, res, next) => {
+  try {
+    const property = await Property.findById(req.params.id);
+
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        error: 'Property not found'
+      });
+    }
+
+    // Increment view count
+    property.views = (property.views || 0) + 1;
+    await property.save();
+
+    // Log the view for analytics
+    console.log(`Property view tracked: ${property.title} (ID: ${property._id}) - Views: ${property.views}`);
+
+    res.json({
+      success: true,
+      message: 'Property view tracked successfully',
+      data: {
+        property_id: property._id,
+        views: property.views
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   POST /properties/:id/interaction
+// @desc    Track property interaction and create lead
+// @access  Public
+router.post('/:id/interaction', optionalAuth, async (req, res, next) => {
+  try {
+    const property = await Property.findById(req.params.id);
+
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        error: 'Property not found'
+      });
+    }
+
+    let {
+      first_name,
+      last_name,
+      email,
+      phone,
+      interaction_type = 'property_view',
+      message,
+      source = 'website'
+    } = req.body;
+
+    // If user is authenticated, use their info
+    if (req.user) {
+      first_name = req.user.first_name;
+      last_name = req.user.last_name;
+      email = req.user.email;
+      phone = req.user.phone;
+      source = 'website';
+    }
+
+    // Create a lead if contact information is available (from user or body)
+    if (first_name && email && phone) {
+      try {
+        const Lead = require('../models/Lead');
+        const leadData = {
+          first_name,
+          last_name: last_name || '',
+          email,
+          phone,
+          source,
+          interested_property: property._id,
+          property_preferences: {
+            budget_min: property.price * 0.8,
+            budget_max: property.price * 1.2,
+            property_type: [property.propertyType],
+            bedrooms: property.beds,
+            bathrooms: property.baths,
+            location_preferences: [property.address.split(',')[0] || 'Addis Ababa']
+          },
+          notes: message || `Interested in property: ${property.title}`,
+          utm_source: 'property_interaction',
+          utm_medium: interaction_type,
+          utm_campaign: 'property_inquiry'
+        };
+        const lead = await Lead.create(leadData);
+        console.log(`Lead created from property interaction: ${lead.first_name} ${lead.last_name} - Property: ${property.title}`);
+        return res.json({
+          success: true,
+          message: 'Property interaction tracked and lead created successfully',
+          data: {
+            property_id: property._id,
+            lead_id: lead._id,
+            interaction_type
+          }
+        });
+      } catch (leadError) {
+        console.error('Error creating lead from property interaction:', leadError);
+        // Still return success for the interaction tracking
+        return res.json({
+          success: true,
+          message: 'Property interaction tracked successfully',
+          data: {
+            property_id: property._id,
+            interaction_type
+          }
+        });
+      }
+    } else {
+      // Just track the interaction without creating a lead
+      return res.json({
+        success: true,
+        message: 'Property interaction tracked successfully',
+        data: {
+          property_id: property._id,
+          interaction_type
+        }
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

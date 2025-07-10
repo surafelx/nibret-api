@@ -40,7 +40,7 @@ const interactionSchema = Joi.object({
 // @route   GET /leads
 // @desc    Get all leads with filtering
 // @access  Private/Admin
-router.get('/', protect, authorize('ADMIN'), async (req, res, next) => {
+router.get('/', protect, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
   try {
     const {
       status,
@@ -102,7 +102,7 @@ router.get('/', protect, authorize('ADMIN'), async (req, res, next) => {
 // @route   GET /leads/stats
 // @desc    Get lead statistics
 // @access  Private/Admin
-router.get('/stats', protect, authorize('ADMIN'), async (req, res, next) => {
+router.get('/stats', protect, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
   try {
     const stats = await Lead.getLeadStats();
     const conversionFunnel = await Lead.getConversionFunnel();
@@ -128,7 +128,7 @@ router.get('/stats', protect, authorize('ADMIN'), async (req, res, next) => {
 // @route   GET /leads/:id
 // @desc    Get single lead with interaction history
 // @access  Private/Admin
-router.get('/:id', protect, authorize('ADMIN'), async (req, res, next) => {
+router.get('/:id', protect, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
   try {
     const lead = await Lead.findById(req.params.id)
       .populate('assigned_to', 'first_name last_name email phone')
@@ -205,7 +205,7 @@ router.post('/', async (req, res, next) => {
 // @route   PUT /leads/:id
 // @desc    Update lead
 // @access  Private/Admin
-router.put('/:id', protect, authorize('ADMIN'), async (req, res, next) => {
+router.put('/:id', protect, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
   try {
     const lead = await Lead.findById(req.params.id);
     if (!lead) {
@@ -251,7 +251,7 @@ router.put('/:id', protect, authorize('ADMIN'), async (req, res, next) => {
 // @route   PATCH /leads/:id/status
 // @desc    Update lead status
 // @access  Private/Admin
-router.patch('/:id/status', protect, authorize('ADMIN'), async (req, res, next) => {
+router.patch('/:id/status', protect, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
   try {
     const { status, notes } = req.body;
     
@@ -288,7 +288,7 @@ router.patch('/:id/status', protect, authorize('ADMIN'), async (req, res, next) 
 // @route   POST /leads/:id/interactions
 // @desc    Add interaction to lead
 // @access  Private/Admin
-router.post('/:id/interactions', protect, authorize('ADMIN'), async (req, res, next) => {
+router.post('/:id/interactions', protect, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
   try {
     const lead = await Lead.findById(req.params.id);
     if (!lead) {
@@ -338,7 +338,7 @@ router.post('/:id/interactions', protect, authorize('ADMIN'), async (req, res, n
 // @route   POST /leads/:id/follow-up
 // @desc    Schedule follow-up for lead
 // @access  Private/Admin
-router.post('/:id/follow-up', protect, authorize('ADMIN'), async (req, res, next) => {
+router.post('/:id/follow-up', protect, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
   try {
     const { date, description } = req.body;
     
@@ -374,7 +374,7 @@ router.post('/:id/follow-up', protect, authorize('ADMIN'), async (req, res, next
 // @route   DELETE /leads/:id
 // @desc    Delete lead
 // @access  Private/Admin
-router.delete('/:id', protect, authorize('ADMIN'), async (req, res, next) => {
+router.delete('/:id', protect, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
   try {
     const lead = await Lead.findById(req.params.id);
     if (!lead) {
