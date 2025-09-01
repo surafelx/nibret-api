@@ -17,11 +17,21 @@ const PORT = process.env.PORT || 3000;
 // Connect to MongoDB
 connectDB();
 
-// Rate limiting with environment variables
+// Rate limiting with environment variables - More generous limits for development
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes default
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000, // Increased to 1000 requests per windowMs
+  message: {
+    success: false,
+    error: 'Too many requests from this IP, please try again later.',
+    retry_after: Math.ceil((parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000) / 1000)
+  },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skip: (req) => {
+    // Skip rate limiting for static files and health checks
+    return req.path.startsWith('/uploads') || req.path === '/health';
+  }
 });
 
 // Middleware
@@ -84,7 +94,15 @@ app.use('/uploads', (req, res, next) => {
 }));
 
 app.use(morgan('combined'));
-app.use(limiter);
+
+// Apply rate limiting conditionally - skip in development for easier testing
+if (process.env.NODE_ENV === 'production') {
+  app.use(limiter);
+  console.log('🛡️  Rate limiting enabled for production');
+} else {
+  console.log('⚠️  Rate limiting disabled for development');
+}
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 

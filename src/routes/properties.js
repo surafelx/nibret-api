@@ -275,7 +275,26 @@ router.get('/', optionalAuth, async (req, res, next) => {
     const properties = await query
       .sort(sort)
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .populate('owner', 'first_name last_name email phone');
+
+    // Transform properties for consistent structure
+    const transformedProperties = properties.map(property => {
+      const propertyObj = property.toJSON();
+
+      // Ensure id field is present
+      if (!propertyObj.id && propertyObj._id) {
+        propertyObj.id = propertyObj._id.toString();
+      }
+
+      // Ensure required fields exist
+      if (!propertyObj.images) propertyObj.images = [];
+      if (!propertyObj.amenities && propertyObj.features) propertyObj.amenities = propertyObj.features;
+      if (!propertyObj.amenities) propertyObj.amenities = [];
+      if (!propertyObj.status) propertyObj.status = 'available';
+
+      return propertyObj;
+    });
 
     // Get total count for pagination
     const total = await Property.countDocuments(
@@ -284,7 +303,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
 
     res.json({
       success: true,
-      data: properties,
+      data: transformedProperties,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -293,6 +312,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
       }
     });
   } catch (error) {
+    console.error('Error fetching properties:', error);
     next(error);
   }
 });
@@ -372,9 +392,33 @@ router.post('/list', async (req, res, next) => {
       .limit(50)
       .populate('owner', 'first_name last_name email phone');
 
-    // Transform properties to ensure id field is present
+    // Transform properties to ensure id field is present and consistent structure
     const transformedProperties = properties.map(property => {
       const propertyObj = property.toJSON();
+
+      // Ensure id field is present
+      if (!propertyObj.id && propertyObj._id) {
+        propertyObj.id = propertyObj._id.toString();
+      }
+
+      // Ensure images array exists
+      if (!propertyObj.images) {
+        propertyObj.images = [];
+      }
+
+      // Ensure amenities/features array exists
+      if (!propertyObj.amenities && propertyObj.features) {
+        propertyObj.amenities = propertyObj.features;
+      }
+      if (!propertyObj.amenities) {
+        propertyObj.amenities = [];
+      }
+
+      // Ensure status field exists
+      if (!propertyObj.status) {
+        propertyObj.status = 'available';
+      }
+
       return propertyObj;
     });
 
@@ -590,12 +634,42 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
       await property.incrementViews();
     }
 
+    // Transform property to ensure id field is present and properly formatted
+    const propertyObj = property.toJSON();
+
+    // Ensure id field is present (some frontend code expects 'id' instead of '_id')
+    if (!propertyObj.id && propertyObj._id) {
+      propertyObj.id = propertyObj._id.toString();
+    }
+
+    // Ensure images array exists
+    if (!propertyObj.images) {
+      propertyObj.images = [];
+    }
+
+    // Ensure amenities/features array exists
+    if (!propertyObj.amenities && propertyObj.features) {
+      propertyObj.amenities = propertyObj.features;
+    }
+    if (!propertyObj.amenities) {
+      propertyObj.amenities = [];
+    }
+
     res.json({
       success: true,
-      data: property
+      data: propertyObj
     });
   } catch (error) {
     console.error(`❌ Error fetching property ${req.params.id}:`, error);
+
+    // Handle invalid ObjectId format
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid property ID format'
+      });
+    }
+
     next(error);
   }
 });

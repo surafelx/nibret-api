@@ -7,9 +7,12 @@
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
     "test": "jest",
+    "test:api": "node test-api-fixes.js",
+    "test:api:watch": "nodemon test-api-fixes.js",
     "seed": "node src/scripts/seed.js",
     "create-super-admin": "node src/scripts/create-super-admin.js",
-    "setup": "npm run seed && npm run create-super-admin"
+    "setup": "npm run seed && npm run create-super-admin",
+    "dev:test": "concurrently \"npm run dev\" \"sleep 5 && npm run test:api\""
   },
   "keywords": [
     "real-estate",
